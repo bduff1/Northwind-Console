@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Data.Entity.Validation;
 using System.Linq;
 using NLog;
 using NorthwindConsole.Models;
@@ -36,7 +37,7 @@ namespace NorthwindConsole
                         {
                             Console.WriteLine($"{item.CategoryName} - {item.Description}");
                         }
-                    } 
+                    }
                     else if (choice == "2")
                     {
                         Category category = new Category();
@@ -45,16 +46,35 @@ namespace NorthwindConsole
                         Console.WriteLine("Enter the Category Description:");
                         category.Description = Console.ReadLine();
 
+                        // save category to db
+                        var db = new NorthwindContext();
+                        //db.AddCategory(category);
+                        db.Categories.Add(category);
+                        db.SaveChanges();
+
+                        foreach (var validationResult in db.GetValidationErrors())
+                        {
+                            foreach (var error in validationResult.ValidationErrors)
+                            {
+                                logger.Error(
+                                    "Entity Property: {0}, Error {1}",
+                                    error.PropertyName,
+                                    error.ErrorMessage);
+                            }
+                        }
+
+
                         ValidationContext context = new ValidationContext(category, null, null);
                         List<ValidationResult> results = new List<ValidationResult>();
 
                         var isValid = Validator.TryValidateObject(category, context, results, true);
                         if (isValid)
                         {
-                            var db = new NorthwindContext();
+                            var dbb = new NorthwindContext();
                             // check for unique name
-                            if (db.Categories.Any(c => c.CategoryName == category.CategoryName))
+                            if (dbb.Categories.Any(c => c.CategoryName == category.CategoryName))
                             {
+
                                 // generate validation error
                                 isValid = false;
                                 results.Add(new ValidationResult("Name exists", new string[] { "CategoryName" }));
@@ -72,7 +92,8 @@ namespace NorthwindConsole
                                 logger.Error($"{result.MemberNames.First()} : {result.ErrorMessage}");
                             }
                         }
-                    } else if (choice == "3")
+                    }
+                    else if (choice == "3")
                     {
                         var db = new NorthwindContext();
                         var query = db.Categories.OrderBy(p => p.CategoryId);
@@ -82,12 +103,13 @@ namespace NorthwindConsole
                         {
                             Console.WriteLine($"{item.CategoryId}) {item.CategoryName}");
                         }
+
                         int id = int.Parse(Console.ReadLine());
                         Console.Clear();
                         logger.Info($"CategoryId {id} selected");
                         Category category = db.Categories.FirstOrDefault(c => c.CategoryId == id);
                         Console.WriteLine($"{category.CategoryName} - {category.Description}");
-                        foreach(Product p in category.Products)
+                        foreach (Product p in category.Products)
                         {
                             Console.WriteLine(p.ProductName);
                         }
@@ -96,23 +118,39 @@ namespace NorthwindConsole
                     {
                         var db = new NorthwindContext();
                         var query = db.Categories.Include("Products").OrderBy(p => p.CategoryId);
-                        foreach(var item in query)
+                        foreach (var item in query)
                         {
                             Console.WriteLine($"{item.CategoryName}");
-                            foreach(Product p in item.Products)
+                            foreach (Product p in item.Products)
                             {
                                 Console.WriteLine($"\t{p.ProductName}");
                             }
                         }
                     }
+
                     Console.WriteLine();
 
                 } while (choice.ToLower() != "q");
+            }
+            catch (DbEntityValidationException e)
+            {
+                logger.Error(e.Message);
+                foreach (var eve in e.EntityValidationErrors)
+                {
+                    logger.Error("Entity of type \"{0}\" in state \"{1}\" has the following validation errors:",
+                        eve.Entry.Entity.GetType().Name, eve.Entry.State);
+                    foreach (var ve in eve.ValidationErrors)
+                    {
+                        logger.Error("- Property: \"{0}\", Error: \"{1}\"",
+                            ve.PropertyName, ve.ErrorMessage);
+                    }
+                }
             }
             catch (Exception ex)
             {
                 logger.Error(ex.Message);
             }
+
             logger.Info("Program ended");
         }
     }
